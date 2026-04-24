@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MAMA SLP Entry Checker</title>
+
+<style>
+body{
+  font-family:Arial;
+  text-align:center;
+  color:white;
+  margin:0;
+  background:linear-gradient(rgba(0,0,0,0.8),rgba(0,0,0,0.8)),
+  url('https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da');
+  background-size:cover;
+}
+
+h1{color:#ff9900;}
+
+input{
+  padding:10px;
+  margin:10px;
+  width:250px;
+  border-radius:5px;
+  border:none;
+}
+
+button{
+  padding:10px;
+  margin:5px;
+  border:none;
+  border-radius:5px;
+  cursor:pointer;
+}
+
+#status{margin-top:10px;font-weight:bold;}
+
+table{
+  width:95%;
+  margin:auto;
+  border-collapse:collapse;
+  margin-top:20px;
+}
+
+th{
+  background:#ff9900;
+  padding:10px;
+}
+
+td{
+  padding:8px;
+  background:rgba(255,255,255,0.1);
+}
+
+mark{background:yellow;color:black;}
+
+.matchRow{
+  background:lime !important;
+  color:black;
+  font-weight:bold;
+}
+
+.duplicate{
+  background:red !important;
+  color:white;
+}
+</style>
+</head>
+
+<body>
+
+<h1>🚛 MAMA SLP Driver Entry Checker</h1>
+
+<input id="vehicle" placeholder="Vehicle Number">
+<input id="dl" placeholder="License Number">
+
+<br>
+
+<button onclick="exportCSV()">📁 Export</button>
+<button onclick="toggleSound()" id="soundBtn">🔊 Sound ON</button>
+
+<div id="status"></div>
+<div id="count"></div>
+
+<table>
+<thead>
+<tr>
+<th>Vehicle</th>
+<th>DL</th>
+<th>Driver</th>
+<th>Lane</th>
+<th>Purpose</th>
+<th>Phone</th>
+</tr>
+</thead>
+<tbody id="data"></tbody>
+</table>
+
+<script>
+
+// 🔗 API
+const API="https://script.google.com/macros/s/AKfycbxdzuG-GIzjCJpLXMvXS8Pje-iTgkZ6CSFDkcIwRee7IyNYuakoIIjZ33laDxMrfNC1Qw/exec";
+
+let allData=[];
+let soundEnabled=true;
+
+// 🔊 SOUND FIX
+let alertSound = new Audio("https://www.soundjay.com/buttons/sounds/beep-07.mp3");
+alertSound.preload="auto";
+alertSound.volume=1.0;
+
+// 🔓 unlock sound (browser fix)
+document.body.addEventListener("click",()=>{
+  alertSound.play().then(()=>alertSound.pause()).catch(()=>{});
+},{once:true});
+
+// 🔊 toggle
+function toggleSound(){
+  soundEnabled=!soundEnabled;
+  soundBtn.innerText=soundEnabled?"🔊 Sound ON":"🔇 Sound OFF";
+}
+
+// 🔄 load
+function loadData(){
+fetch(API)
+.then(r=>r.json())
+.then(data=>{
+  allData=data;
+  filterData();
+});
+}
+
+// 🔍 auto search
+vehicle.oninput=filterData;
+dl.oninput=filterData;
+
+// 🔥 FILTER
+function filterData(){
+
+let v=vehicle.value.toLowerCase().trim();
+let d=dl.value.toLowerCase().trim();
+let now=Date.now();
+
+if(v.length<3 && d.length<3){
+  data.innerHTML="";
+  status.innerText="";
+  count.innerText="";
+  return;
+}
+
+let filtered=allData.filter(item=>{
+
+  let time=typeof item.time==="number"?item.time:new Date(item.time).getTime();
+  let diff=(now-time)/(1000*60*60);
+
+  if(diff>4) return false;
+
+  let vehicleText=(item.vehicle||"").toLowerCase();
+  let dlText=(item.dl||"").toLowerCase();
+
+  return vehicleText.includes(v)||dlText.includes(d);
+});
+
+// 🔥 DUPLICATE DL CHECK
+let seen={};
+let duplicateFound=false;
+
+filtered.forEach(item=>{
+  let key=item.dl;
+
+  if(seen[key]){
+    duplicateFound=true;
+  }else{
+    seen[key]=true;
+  }
+});
+
+// 🔊 SOUND ONLY DUPLICATE
+if(duplicateFound && soundEnabled){
+  alertSound.currentTime=0;
+  alertSound.play().catch(()=>{});
+}
+
+// status
+status.innerText=filtered.length?"✅ Found":"❌ Not Found";
+count.innerText="Entries (Last 4 Hours): "+filtered.length;
+
+// show
+showData(filtered,v,d);
+}
+
+
+// 🔥 SHOW TABLE (TOP + HIGHLIGHT)
+function showData(rows,v,d){
+
+let matchRows=[];
+let otherRows=[];
+let seen={};
+
+rows.forEach(item=>{
+
+let vehicle=item.vehicle||"";
+let dlText=item.dl||"";
+
+let isMatch=
+(v && vehicle.toLowerCase().includes(v)) ||
+(d && dlText.toLowerCase().includes(d));
+
+// highlight text
+if(v){
+  vehicle=vehicle.replace(new RegExp(v,"gi"),m=>"<mark>"+m+"</mark>");
+}
+if(d){
+  dlText=dlText.replace(new RegExp(d,"gi"),m=>"<mark>"+m+"</mark>");
+}
+
+// duplicate check
+let key=item.dl;
+let isDuplicate=seen[key];
+seen[key]=true;
+
+let rowClass="";
+if(isDuplicate) rowClass="duplicate";
+else if(isMatch) rowClass="matchRow";
+
+let rowHTML=`
+<tr class="${rowClass}">
+<td>${vehicle}</td>
+<td>${dlText}</td>
+<td>${item.driver||""}</td>
+<td>${item.lane||""}</td>
+<td>${item.purpose||""}</td>
+<td>${item.phone||""}</td>
+</tr>
+`;
+
+if(isMatch){
+  matchRows.push(rowHTML);
+}else{
+  otherRows.push(rowHTML);
+}
+
+});
+
+// 🔥 show match top
+data.innerHTML=matchRows.join("")+otherRows.join("");
+}
+
+
+// 📁 EXPORT
+function exportCSV(){
+
+let csv="Vehicle,DL,Driver,Lane,Purpose,Phone\n";
+
+allData.forEach(d=>{
+csv+=`${d.vehicle},${d.dl},${d.driver},${d.lane},${d.purpose},${d.phone}\n`;
+});
+
+let blob=new Blob([csv],{type:"text/csv"});
+let a=document.createElement("a");
+a.href=URL.createObjectURL(blob);
+a.download="report.csv";
+a.click();
+}
+
+// 🔄 AUTO REFRESH
+setInterval(loadData,4000);
+
+// first load
+loadData();
+
+</script>
+
+</body>
+</html>
